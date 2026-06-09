@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MotoFIPE — Consulta Tabela FIPE</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --green: #1D9E75;
+    --green-dark: #0F6E56;
+    --green-light: #E1F5EE;
+    --amber: #854F0B;
+    --amber-light: #FAEEDA;
+    --bg: #f8f9fa;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --text: #111827;
+    --muted: #6b7280;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* HEADER */
+  .header { background: var(--card); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  .logo { display: flex; align-items: center; gap: 8px; }
+  .logo-badge { background: var(--green); color: white; font-size: 14px; font-weight: 600; padding: 5px 12px; border-radius: var(--radius-sm); letter-spacing: -0.3px; }
+  .logo-sub { font-size: 12px; color: var(--muted); }
+  .update-dot { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; }
+
+  /* NAV TABS */
+  .nav { display: flex; gap: 4px; padding: 12px 20px 0; background: var(--card); border-bottom: 1px solid var(--border); }
+  .tab { padding: 8px 16px; font-size: 13px; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); cursor: pointer; font-weight: 500; transition: all 0.15s; }
+  .tab.active { color: var(--green); border-bottom-color: var(--green); }
+
+  /* MAIN */
+  .main { max-width: 720px; margin: 0 auto; padding: 20px 16px; }
+
+  /* VIEWS */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* SEARCH */
+  .search-wrap { display: flex; gap: 8px; margin-bottom: 16px; }
+  .search-input { flex: 1; padding: 10px 14px; font-size: 15px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); color: var(--text); outline: none; transition: border 0.15s; }
+  .search-input:focus { border-color: var(--green); }
+  .filter-select { padding: 10px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); color: var(--text); outline: none; cursor: pointer; }
+
+  /* RESULT CARD */
+  .result-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 10px; transition: box-shadow 0.15s; }
+  .result-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.07); }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .moto-name { font-size: 15px; font-weight: 600; color: var(--text); }
+  .moto-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .fipe-code { font-size: 11px; background: var(--bg); border: 1px solid var(--border); padding: 3px 8px; border-radius: 6px; color: var(--muted); font-family: monospace; }
+  .price-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .price-box { background: var(--bg); border-radius: var(--radius-sm); padding: 10px 12px; }
+  .price-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .price-val { font-size: 17px; font-weight: 600; }
+  .price-val.green { color: var(--green-dark); }
+  .price-val.amber { color: var(--amber); }
+  .card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn { padding: 7px 13px; font-size: 12px; font-weight: 500; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; background: var(--card); color: var(--text); display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s; }
+  .btn:hover { background: var(--bg); }
+  .btn-primary { background: var(--green); color: white; border-color: var(--green); }
+  .btn-primary:hover { background: var(--green-dark); border-color: var(--green-dark); }
+
+  /* EMPTY / LOADING */
+  .empty { text-align: center; padding: 40px 20px; color: var(--muted); }
+  .empty-icon { font-size: 36px; margin-bottom: 10px; }
+  .loading { text-align: center; padding: 30px; color: var(--muted); font-size: 14px; }
+  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--green); border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* DASHBOARD */
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+  .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .stat-val { font-size: 22px; font-weight: 600; color: var(--text); }
+  .section-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 480px; }
+  th { padding: 10px 14px; background: var(--bg); color: var(--muted); font-weight: 600; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg); }
+  .tag-green { display: inline-block; background: var(--green-light); color: var(--green-dark); font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 6px; }
+
+  /* CHECKLIST */
+  .checklist-section { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+  .checklist-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .check-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .check-item:last-child { border-bottom: none; padding-bottom: 0; }
+  .check-item input[type=checkbox] { width: 17px; height: 17px; cursor: pointer; accent-color: var(--green); margin-top: 1px; flex-shrink: 0; }
+  .score-section { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+  .score-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .score-text { font-size: 14px; font-weight: 600; }
+  .score-pct { font-size: 20px; font-weight: 700; color: var(--green); }
+  .bar-bg { height: 10px; background: var(--bg); border-radius: 5px; overflow: hidden; border: 1px solid var(--border); }
+  .bar-fill { height: 100%; background: var(--green); border-radius: 5px; transition: width 0.4s ease; }
+  .score-verdict { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; }
+  .verdict-ok { background: var(--green-light); color: var(--green-dark); }
+  .verdict-warn { background: var(--amber-light); color: var(--amber); }
+  .verdict-bad { background: #fef2f2; color: #991b1b; }
+
+  /* MOBILE */
+  @media (max-width: 480px) {
+    .price-grid { grid-template-columns: 1fr 1fr; }
+    .price-grid .price-box:last-child { grid-column: span 2; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .stats-grid .stat-card:last-child { grid-column: span 2; }
+    .price-val { font-size: 15px; }
+    .header { padding: 10px 14px; }
+    .main { padding: 14px 12px; }
+  }
+
+  /* PDF BUTTON */
+  .pdf-btn { width: 100%; padding: 12px; font-size: 14px; font-weight: 600; background: var(--green); color: white; border: none; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.15s; }
+  .pdf-btn:hover { background: var(--green-dark); }
+
+  /* MOTO INPUT */
+  .moto-input-wrap { margin-bottom: 16px; }
+  .moto-input-wrap input { width: 100%; padding: 10px 14px; font-size: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); color: var(--text); outline: none; }
+  .moto-input-wrap input:focus { border-color: var(--green); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <span class="logo-badge">MotoFIPE</span>
+    <span class="logo-sub">Lojista Pro</span>
+  </div>
+  <div class="update-dot">
+    <span class="dot"></span>
+    <span id="mesRef">Carregando...</span>
+  </div>
+</div>
+
+<nav class="nav">
+  <button class="tab active" onclick="switchTab('consulta', this)">🔍 Consulta</button>
+  <button class="tab" onclick="switchTab('dashboard', this)">📊 Dashboard</button>
+  <button class="tab" onclick="switchTab('checklist', this)">✅ Checklist</button>
+</nav>
+
+<div class="main">
+
+  <!-- CONSULTA -->
+  <div id="view-consulta" class="view active">
+    <div class="search-wrap">
+      <input class="search-input" type="text" id="searchInput" placeholder="Modelo ou código FIPE... ex: CG 160, 811133-2" oninput="buscar()">
+      <select class="filter-select" id="filterMarca" onchange="buscar()">
+        <option value="">Todas</option>
+        <option value="HONDA">Honda</option>
+        <option value="YAMAHA">Yamaha</option>
+      </select>
+    </div>
+    <div id="resultados">
+      <div class="empty">
+        <div class="empty-icon">🏍️</div>
+        <div>Digite um modelo ou código FIPE para consultar</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="view-dashboard" class="view">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Motos indexadas</div>
+        <div class="stat-val" id="totalMotos">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Preço médio FIPE</div>
+        <div class="stat-val" id="precoMedio">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Referência</div>
+        <div class="stat-val" style="font-size:15px;" id="mesRefDash">—</div>
+      </div>
+    </div>
+    <div class="section-title">Tabela comercial — FIPE com margem de compra (−20%)</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Modelo</th>
+            <th>Ano</th>
+            <th>FIPE</th>
+            <th>Compra (−20%)</th>
+            <th>Margem</th>
+          </tr>
+        </thead>
+        <tbody id="dashTable">
+          <tr><td colspan="5" class="loading"><span class="spinner"></span>Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- CHECKLIST -->
+  <div id="view-checklist" class="view">
+    <div class="moto-input-wrap">
+      <input type="text" id="motoNome" placeholder="Nome da moto avaliada... ex: Honda CG 160 Titan 2022">
+    </div>
+
+    <div class="checklist-section">
+      <div class="checklist-title">👁️ Inspeção visual</div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>Lataria sem amassados ou trincas visíveis</span></div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>Pintura sem bolhas, ferrugem ou arranhões profundos</span></div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>Pneus com borracha acima de 50% de vida útil</span></div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>Retrovisores e faróis íntegros e sem trincas</span></div>
+    </div>
+
+    <div class="checklist-section">
+      <div class="checklist-title">⚙️ Motor e mecânica</div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>Motor liga sem dificuldade e sem fumaça anormal</span></div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>Sem vazamento de óleo, fluido ou combustível</span></div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>Câmbio troca todas as marchas corretamente</span></div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>Freios dianteiro e traseiro respondem com firmeza</span></div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>Suspensão sem barulhos ou folgas excessivas</span></div>
+    </div>
+
+    <div class="checklist-section">
+      <div class="checklist-title">📄 Documentação</div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>CRLV em nome do vendedor ou com DUT assinado</span></div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>Sem débitos de IPVA, multas ou licenciamento</span></div>
+      <div class="check-item"><input type="checkbox" class="chk" onchange="calcScore()"><span>Número do chassi confere com o documento</span></div>
+    </div>
+
+    <div class="score-section">
+      <div class="score-row">
+        <span class="score-text" id="scoreLabel">0 / 12 itens</span>
+        <span class="score-pct" id="scorePct">0%</span>
+      </div>
+      <div class="bar-bg"><div class="bar-fill" id="scoreFill" style="width:0%"></div></div>
+      <div class="score-verdict verdict-warn" id="scoreVerdict" style="display:none"></div>
+    </div>
+
+    <button class="pdf-btn" onclick="gerarPDF()">
+      📄 Gerar Relatório PDF para Cliente
+    </button>
+  </div>
+
+</div>
+
+<script>
+// ─── CONFIG SUPABASE ────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://fnmzhwccywfdkxvpkwly.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZubXpod2NjeXdmZGt4dnBrd2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MzE4NzcsImV4cCI6MjA5NjUwNzg3N30.sbbgoYMn4YRlI6IAL2p_NjW7ZEcw484M24rbd499QGg';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ─── ESTADO ─────────────────────────────────────────────────────────────────
+let todasMotos = [];
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+async function init() {
+  const { data, error } = await db.from('motos_fipe').select('*').order('fipe_modelo');
+  if (error) { console.error(error); return; }
+  todasMotos = data || [];
+  const mes = todasMotos[0]?.mes_referencia || 'atualizado';
+  document.getElementById('mesRef').textContent = mes;
+  document.getElementById('mesRefDash').textContent = mes;
+}
+init();
+
+// ─── UTILS ───────────────────────────────────────────────────────────────────
+function fmtBRL(n) {
+  if (!n && n !== 0) return '—';
+  return 'R$ ' + Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ─── TABS ────────────────────────────────────────────────────────────────────
+function switchTab(view, el) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-' + view).classList.add('active');
+  el.classList.add('active');
+  if (view === 'dashboard') renderDash();
+}
+
+// ─── BUSCA ───────────────────────────────────────────────────────────────────
+function buscar() {
+  const q = document.getElementById('searchInput').value.toLowerCase().trim();
+  const marca = document.getElementById('filterMarca').value;
+  const el = document.getElementById('resultados');
+
+  if (!q && !marca) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">🏍️</div><div>Digite um modelo ou código FIPE para consultar</div></div>`;
+    return;
+  }
+
+  let found = todasMotos.filter(m => {
+    const matchQ = !q ||
+      (m.fipe_modelo || '').toLowerCase().includes(q) ||
+      (m.modelo_original || '').toLowerCase().includes(q) ||
+      (m.codigo_fipe || '').toLowerCase().includes(q);
+    const matchM = !marca || (m.fipe_marca || '').toUpperCase() === marca;
+    return matchQ && matchM;
+  });
+
+  if (!found.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><div>Nenhuma moto encontrada. Tente outro termo.</div></div>`;
+    return;
+  }
+
+  el.innerHTML = found.slice(0, 10).map(m => {
+    const preco = Number(m.preco) || 0;
+    const compra = Math.round(preco * 0.8);
+    const margem = preco - compra;
+    return `
+    <div class="result-card">
+      <div class="card-header">
+        <div>
+          <div class="moto-name">${m.fipe_modelo || m.modelo_original} · ${m.ano_modelo || m.fipe_ano}</div>
+          <div class="moto-sub">${m.fipe_marca || ''} · ${m.combustivel || 'Gasolina'}</div>
+        </div>
+        <span class="fipe-code">${m.codigo_fipe || ''}</span>
+      </div>
+      <div class="price-grid">
+        <div class="price-box">
+          <div class="price-label">Tabela FIPE</div>
+          <div class="price-val">${fmtBRL(preco)}</div>
+        </div>
+        <div class="price-box">
+          <div class="price-label">Compra sugerida (−20%)</div>
+          <div class="price-val green">${fmtBRL(compra)}</div>
+        </div>
+        <div class="price-box">
+          <div class="price-label">Margem potencial</div>
+          <div class="price-val amber">${fmtBRL(margem)}</div>
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-primary" onclick="gerarPDFMoto('${(m.fipe_modelo||'').replace(/'/g,'')}','${m.ano_modelo||m.fipe_ano}','${fmtBRL(preco)}','${fmtBRL(compra)}','${m.codigo_fipe||''}','${m.fipe_marca||''}')">📄 Gerar PDF</button>
+        <button class="btn" onclick="abrirChecklist('${(m.fipe_modelo||m.modelo_original||'').replace(/'/g,'')} ${m.ano_modelo||m.fipe_ano}')">✅ Checklist</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── CHECKLIST ───────────────────────────────────────────────────────────────
+function abrirChecklist(nome) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-checklist').classList.add('active');
+  document.querySelectorAll('.tab')[2].classList.add('active');
+  document.getElementById('motoNome').value = nome;
+  document.querySelectorAll('.chk').forEach(c => c.checked = false);
+  calcScore();
+}
+
+function calcScore() {
+  const all = document.querySelectorAll('.chk');
+  const checked = document.querySelectorAll('.chk:checked').length;
+  const pct = Math.round((checked / all.length) * 100);
+  document.getElementById('scoreLabel').textContent = checked + ' / ' + all.length + ' itens';
+  document.getElementById('scorePct').textContent = pct + '%';
+  document.getElementById('scoreFill').style.width = pct + '%';
+
+  const v = document.getElementById('scoreVerdict');
+  if (checked === 0) { v.style.display = 'none'; return; }
+  v.style.display = 'block';
+  if (pct >= 80) {
+    v.className = 'score-verdict verdict-ok';
+    v.textContent = '✅ Moto em boa condição — negociação recomendada.';
+  } else if (pct >= 50) {
+    v.className = 'score-verdict verdict-warn';
+    v.textContent = '⚠️ Atenção — negocie desconto adicional pelos itens pendentes.';
+  } else {
+    v.className = 'score-verdict verdict-bad';
+    v.textContent = '❌ Muitos itens irregulares — avalie o risco antes de comprar.';
+  }
+}
+
+// ─── DASHBOARD ───────────────────────────────────────────────────────────────
+function renderDash() {
+  if (!todasMotos.length) return;
+  const precos = todasMotos.map(m => Number(m.preco) || 0).filter(p => p > 0);
+  const media = precos.reduce((a, b) => a + b, 0) / precos.length;
+  document.getElementById('totalMotos').textContent = todasMotos.length;
+  document.getElementById('precoMedio').textContent = 'R$ ' + Math.round(media / 1000) + 'k';
+
+  const tb = document.getElementById('dashTable');
+  tb.innerHTML = todasMotos.slice(0, 20).map(m => {
+    const preco = Number(m.preco) || 0;
+    const compra = Math.round(preco * 0.8);
+    const margem = preco - compra;
+    return `<tr>
+      <td>${m.fipe_modelo || m.modelo_original}</td>
+      <td>${m.ano_modelo || m.fipe_ano}</td>
+      <td>${fmtBRL(preco)}</td>
+      <td><span class="tag-green">${fmtBRL(compra)}</span></td>
+      <td style="color:var(--amber);font-weight:600">${fmtBRL(margem)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── PDF MOTO ─────────────────────────────────────────────────────────────────
+function gerarPDFMoto(modelo, ano, fipe, compra, codigo, marca) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const hoje = new Date().toLocaleDateString('pt-BR');
+
+  doc.setFillColor(29, 158, 117);
+  doc.rect(0, 0, 210, 35, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(20); doc.setFont('helvetica', 'bold');
+  doc.text('MotoFIPE', 15, 18);
+  doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+  doc.text('Proposta de Compra', 15, 27);
+  doc.text('Data: ' + hoje, 150, 27);
+
+  doc.setTextColor(17, 24, 39);
+  doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+  doc.text('Dados do Veículo', 15, 50);
+  doc.setFontSize(11); doc.setFont('helvetica', 'normal');
+  doc.text('Modelo: ' + modelo + ' ' + ano, 15, 62);
+  doc.text('Marca: ' + marca, 15, 72);
+  doc.text('Código FIPE: ' + codigo, 15, 82);
+
+  doc.setFillColor(248, 249, 250);
+  doc.rect(14, 92, 182, 45, 'F');
+  doc.setFontSize(13); doc.setFont('helvetica', 'bold');
+  doc.text('Valores de Referência', 20, 104);
+  doc.setFontSize(11); doc.setFont('helvetica', 'normal');
+  doc.text('Tabela FIPE:', 20, 116);
+  doc.setFont('helvetica', 'bold'); doc.text(fipe, 100, 116);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Preço de compra sugerido (−20%):', 20, 128);
+  doc.setTextColor(15, 110, 86); doc.setFont('helvetica', 'bold');
+  doc.text(compra, 100, 128);
+  doc.setTextColor(17, 24, 39); doc.setFont('helvetica', 'normal');
+
+  doc.setFontSize(9);
+  doc.setTextColor(107, 114, 128);
+  doc.text('Este documento é uma estimativa baseada na Tabela FIPE oficial. Preços sujeitos a variação conforme', 15, 270);
+  doc.text('condições do veículo, mercado local e negociação. Gerado por MotoFIPE.', 15, 276);
+
+  doc.save('proposta_' + modelo.replace(/\s+/g, '_') + '_' + ano + '.pdf');
+}
+
+// ─── PDF CHECKLIST ─────────────────────────────────────────────────────────
+function gerarPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  const moto = document.getElementById('motoNome').value || 'Moto não identificada';
+  const checkboxes = document.querySelectorAll('.chk');
+  const checked = document.querySelectorAll('.chk:checked').length;
+  const pct = Math.round((checked / checkboxes.length) * 100);
+
+  doc.setFillColor(29, 158, 117);
+  doc.rect(0, 0, 210, 35, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(20); doc.setFont('helvetica', 'bold');
+  doc.text('MotoFIPE', 15, 18);
+  doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+  doc.text('Relatório de Avaliação', 15, 27);
+  doc.text('Data: ' + hoje, 150, 27);
+
+  doc.setTextColor(17, 24, 39);
+  doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+  doc.text('Veículo Avaliado: ' + moto, 15, 50);
+
+  doc.setFontSize(13); doc.setFont('helvetica', 'bold');
+  doc.text('Pontuação: ' + checked + ' / ' + checkboxes.length + ' (' + pct + '%)', 15, 65);
+
+  const itens = document.querySelectorAll('.check-item');
+  let y = 80;
+  doc.setFontSize(11); doc.setFont('helvetica', 'bold');
+  doc.text('Itens verificados:', 15, y); y += 10;
+
+  itens.forEach(item => {
+    const cb = item.querySelector('input[type=checkbox]');
+    const label = item.querySelector('span')?.textContent || '';
+    const icon = cb.checked ? '✓' : '✗';
+    const cor = cb.checked ? [15, 110, 86] : [153, 27, 27];
+    doc.setTextColor(...cor);
+    doc.setFont('helvetica', cb.checked ? 'normal' : 'normal');
+    doc.setFontSize(10);
+    doc.text(icon + ' ' + label, 15, y);
+    y += 8;
+    if (y > 270) { doc.addPage(); y = 20; }
+  });
+
+  doc.setTextColor(107, 114, 128);
+  doc.setFontSize(9);
+  doc.text('Relatório gerado por MotoFIPE — ' + hoje, 15, 285);
+
+  doc.save('avaliacao_' + moto.replace(/\s+/g, '_') + '.pdf');
+}
+</script>
+</body>
+</html>
